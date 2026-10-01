@@ -12,7 +12,7 @@ on:
       create_release:
         description: 'Whether to create a GitHub Release (for manual triggers)'
         required: false
-        default: 'false'
+        default: 'true'
         type: boolean
 
 permissions:
@@ -66,20 +66,22 @@ jobs:
           retention-days: 30
 
       - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.create_release == 'true'
         uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: "Eridanus Assistant ${{ github.ref_name || format('v{0}', env.VERSION_NAME) }}"
-          tag_name: ${{ github.ref_name || format('v{0}', env.VERSION_NAME) }}
+          name: "Eridanus Assistant v${{ env.VERSION_NAME }}"
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v{0}', env.VERSION_NAME) }}
           files: ${{ env.TARGET_APK }}
           draft: false
           prerelease: false
           generate_release_notes: true
+          make_latest: true
           body: |
             ### 📱 Eridanus 助理 Android 客户端
             - **版本**：v${{ env.VERSION_NAME }} (Build ${{ env.VERSION_CODE }})
-            - **功能说明**：
-              - 全局屏幕悬浮球与多模态屏幕翻译/建议
+            - **功能亮点**：
+              - 全局屏幕悬浮球与多模态屏幕翻译 / 建议
               - 实时聊天增量流同步与图片跨设备缓存
               - 完整共享 QQ 账号上下文与长期记忆
-            - **下载说明**：下载下方附件 `Eridanus-Assistant-v${{ env.VERSION_NAME }}.apk` 并直接安装至安卓设备。
+            - **下载与安装**：下载下方附件 `Eridanus-Assistant-v${{ env.VERSION_NAME }}.apk` 并直接安装至安卓设备。
