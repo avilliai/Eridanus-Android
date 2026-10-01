@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 温馨暖色调日系二次元配色 -->
+    <color name="primary">#8D5B4C</color>          <!-- 棕色/贝雷帽深棕 -->
+    <color name="primary_dark">#6D3D30</color>     <!-- 浓郁摩卡棕 -->
+    <color name="accent_warm">#E8A598</color>      <!-- 少女腮红粉 -->
+    <color name="accent_gold">#FFD56B</color>      <!-- 暖金发饰黄 -->
+    
+    <color name="bg_cream">#FDFBF7</color>         <!-- 象牙奶油米白背景 -->
+    <color name="card_bg">#FFFFFF</color>          <!-- 纯白卡片 -->
+    <color name="card_border">#EFE8E1</color>      <!-- 卡片浅棕边框 -->
+    
+    <color name="text_primary">#3E2723</color>     <!-- 深咖啡文字色 -->
+    <color name="text_secondary">#8D6E63</color>   <!-- 浅棕次要文字 -->
+    <color name="text_hint">#BCAAA4</color>        <!-- 提示灰棕 -->
+    
+    <color name="msg_user_bg">#8D5B4C</color>      <!-- 用户发出的气泡背景 -->
+    <color name="msg_bot_bg">#F4EBE2</color>       <!-- 机器人回复气泡暖米色 -->
+    
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+</resources>
