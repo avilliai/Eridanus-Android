@@ -1,4 +1,18 @@
-﻿package com.eridanus.assistant.ui
+package com.eridanus.assistant.ui
+import android.Manifest
+import android.app.Dialog
+import android.content.pm.PackageManager
+import android.graphics.drawable.ColorDrawable
+import android.os.Build
+import android.view.ViewGroup
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.ProgressBar
+import androidx.core.content.ContextCompat
+import com.eridanus.assistant.R
+import com.google.android.material.button.MaterialButton
+import java.io.FileOutputStream
+
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -60,6 +74,29 @@ class ChatActivity : AppCompatActivity() {
         }
     }
 
+    private var pendingSaveBytes: ByteArray? = null
+    private var pendingSaveBitmap: Bitmap? = null
+
+    private val requestStoragePermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            val bytes = pendingSaveBytes
+            val bitmap = pendingSaveBitmap
+            if (bytes != null || bitmap != null) {
+                performSaveImage(bytes, bitmap)
+            }
+        } else {
+            Toast.makeText(
+                this,
+                "\u8bf7\u6388\u4e88\u5b58\u50a8\u6743\u9650\u4ee5\u4fdd\u5b58\u56fe\u7247\u5230\u76f8\u518c",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+        pendingSaveBytes = null
+        pendingSaveBitmap = null
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityChatBinding.inflate(layoutInflater)
@@ -95,6 +132,9 @@ class ChatActivity : AppCompatActivity() {
         binding.switchAtBot.isChecked = configManager.atBotDefault
 
         chatAdapter = ChatAdapter(apiClient, botDisplayName = botName)
+        chatAdapter.onImageClickListener = { item ->
+            showImageViewer(item)
+        }
         binding.rvChat.apply {
             layoutManager = LinearLayoutManager(this@ChatActivity).apply {
                 stackFromEnd = true
@@ -551,6 +591,168 @@ class ChatActivity : AppCompatActivity() {
                 isWaitingBotReply = false
                 binding.btnSend.isEnabled = true
                 binding.rvChat.scrollToPosition(chatAdapter.itemCount - 1)
+            }
+        }
+    }
+
+    private fun showImageViewer(item: ChatImageItem) {
+        val dialog = Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
+        dialog.setContentView(R.layout.dialog_image_viewer)
+        dialog.window?.apply {
+            setBackgroundDrawable(ColorDrawable(0xFF000000.toInt()))
+            setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        }
+
+        val ivFullImage = dialog.findViewById<ZoomableImageView>(R.id.ivFullImage)
+        val pbLoading = dialog.findViewById<ProgressBar>(R.id.pbLoading)
+        val btnCloseViewer = dialog.findViewById<ImageView>(R.id.btnCloseViewer)
+        val btnSaveImage = dialog.findViewById<MaterialButton>(R.id.btnSaveImage)
+        val layoutTopBar = dialog.findViewById<LinearLayout>(R.id.layoutTopBar)
+        val layoutBottomBar = dialog.findViewById<LinearLayout>(R.id.layoutBottomBar)
+
+        var currentBytes: ByteArray? = null
+        var currentBitmap: Bitmap? = null
+
+        btnCloseViewer.setOnClickListener {
+            dialog.dismiss()
+        }
+
+        ivFullImage.onSingleTapListener = {
+            val isVisible = layoutTopBar.visibility == View.VISIBLE
+            val targetVis = if (isVisible) View.GONE else View.VISIBLE
+            layoutTopBar.visibility = targetVis
+            layoutBottomBar.visibility = targetVis
+        }
+
+        btnSaveImage.isEnabled = false
+        btnSaveImage.setOnClickListener {
+            val b = currentBytes
+            val bm = currentBitmap
+            if (b == null && bm == null) {
+                Toast.makeText(this@ChatActivity, "\u56fe\u7247\u5c1a\u672a\u52a0\u8f7d\u5b8c\u6210\uff0c\u8bf7\u7a0d\u5019", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                if (ContextCompat.checkSelfPermission(
+                        this@ChatActivity,
+                        Manifest.permission.WRITE_EXTERNAL_STORAGE
+                    ) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    pendingSaveBytes = b
+                    pendingSaveBitmap = bm
+                    requestStoragePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                    return@setOnClickListener
+                }
+            }
+
+            performSaveImage(b, bm)
+        }
+
+        if (!item.base64.isNullOrBlank()) {
+            pbLoading.visibility = View.VISIBLE
+            lifecycleScope.launch(Dispatchers.IO) {
+                try {
+                    val bytes = Base64.decode(item.base64, Base64.NO_WRAP)
+                    val bm = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    withContext(Dispatchers.Main) {
+                        pbLoading.visibility = View.GONE
+                        if (bm != null) {
+                            currentBytes = bytes
+                            currentBitmap = bm
+                            ivFullImage.setImageBitmap(bm)
+                            btnSaveImage.isEnabled = true
+                        } else {
+                            Toast.makeText(this@ChatActivity, "\u56fe\u7247\u52a0\u8f7d\u5931\u8d25", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        pbLoading.visibility = View.GONE
+                        Toast.makeText(this@ChatActivity, "\u56fe\u7247\u52a0\u8f7d\u5931\u8d25: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        } else if (!item.url.isNullOrBlank()) {
+            val rawUrl = item.url
+            val diskFile = ChatAdapter.getDiskCacheFile(this, rawUrl)
+            pbLoading.visibility = View.VISIBLE
+
+            lifecycleScope.launch(Dispatchers.IO) {
+                try {
+                    var bytes: ByteArray? = null
+                    if (diskFile.exists() && diskFile.length() > 0) {
+                        try {
+                            bytes = diskFile.readBytes()
+                        } catch (_: Exception) {}
+                    }
+
+                    if (bytes == null || bytes.isEmpty()) {
+                        bytes = apiClient.downloadImageBytes(rawUrl)
+                        if (bytes != null && bytes.isNotEmpty()) {
+                            try {
+                                FileOutputStream(diskFile).use { fos ->
+                                    fos.write(bytes)
+                                    fos.flush()
+                                }
+                            } catch (_: Exception) {}
+                        }
+                    }
+
+                    if (bytes != null && bytes.isNotEmpty()) {
+                        val bm = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                        withContext(Dispatchers.Main) {
+                            pbLoading.visibility = View.GONE
+                            if (bm != null) {
+                                currentBytes = bytes
+                                currentBitmap = bm
+                                ivFullImage.setImageBitmap(bm)
+                                btnSaveImage.isEnabled = true
+                            } else {
+                                Toast.makeText(this@ChatActivity, "\u56fe\u7247\u52a0\u8f7d\u5931\u8d25", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    } else {
+                        withContext(Dispatchers.Main) {
+                            pbLoading.visibility = View.GONE
+                            Toast.makeText(this@ChatActivity, "\u56fe\u7247\u4e0b\u8f7d\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u7f51\u7edc", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        pbLoading.visibility = View.GONE
+                        Toast.makeText(this@ChatActivity, "\u56fe\u7247\u52a0\u8f7d\u5931\u8d25: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+
+        dialog.show()
+    }
+
+    private fun performSaveImage(bytes: ByteArray?, bitmap: Bitmap?) {
+        lifecycleScope.launch {
+            Toast.makeText(this@ChatActivity, "\u6b63\u5728\u4fdd\u5b58\u56fe\u7247...", Toast.LENGTH_SHORT).show()
+            val result = if (bytes != null) {
+                ImageSaveHelper.saveBytesToAlbum(this@ChatActivity, bytes)
+            } else if (bitmap != null) {
+                ImageSaveHelper.saveBitmapToAlbum(this@ChatActivity, bitmap)
+            } else {
+                Result.failure(Exception("\u65e0\u6548\u7684\u56fe\u7247\u6570\u636e"))
+            }
+
+            if (result.isSuccess) {
+                Toast.makeText(
+                    this@ChatActivity,
+                    "\u56fe\u7247\u5df2\u4fdd\u5b58\u81f3\u7cfb\u7edf\u76f8\u518c",
+                    Toast.LENGTH_LONG
+                ).show()
+            } else {
+                Toast.makeText(
+                    this@ChatActivity,
+                    "\u4fdd\u5b58\u5931\u8d25: ${result.exceptionOrNull()?.message}",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
     }

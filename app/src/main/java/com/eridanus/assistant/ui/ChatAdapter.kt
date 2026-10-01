@@ -1,4 +1,4 @@
-﻿package com.eridanus.assistant.ui
+package com.eridanus.assistant.ui
 
 import android.content.Context
 import android.graphics.Bitmap
@@ -20,6 +20,11 @@ import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
 
+data class ChatImageItem(
+    val url: String? = null,
+    val base64: String? = null
+)
+
 class ChatAdapter(
     private val apiClient: EridanusApiClient,
     private val messages: MutableList<ChatMessage> = mutableListOf(),
@@ -36,7 +41,7 @@ class ChatAdapter(
             }
         }
 
-        private fun md5Hex(str: String): String {
+        fun md5Hex(str: String): String {
             return try {
                 val digest = MessageDigest.getInstance("MD5")
                 val bytes = digest.digest(str.toByteArray(Charsets.UTF_8))
@@ -44,6 +49,12 @@ class ChatAdapter(
             } catch (_: Exception) {
                 str.hashCode().toString()
             }
+        }
+
+        fun getDiskCacheFile(context: Context, rawUrl: String): File {
+            val cacheDir = File(context.cacheDir, "chat_image_cache").apply { if (!exists()) mkdirs() }
+            val filename = md5Hex(rawUrl) + ".img"
+            return File(cacheDir, filename)
         }
 
         fun calculateInSampleSize(options: BitmapFactory.Options, reqWidth: Int, reqHeight: Int): Int {
@@ -61,6 +72,8 @@ class ChatAdapter(
             return inSampleSize.coerceAtLeast(1)
         }
     }
+
+    var onImageClickListener: ((item: ChatImageItem) -> Unit)? = null
 
     private val adapterScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val placeholderDrawable = ColorDrawable(0x12000000)
@@ -103,12 +116,19 @@ class ChatAdapter(
                 } catch (_: Exception) {
                     holder.ivUserImage.visibility = View.GONE
                 }
+                holder.ivUserImage.setOnClickListener {
+                    onImageClickListener?.invoke(ChatImageItem(base64 = msg.localImageBitmap))
+                }
             } else if (msg.imageUrls.isNotEmpty()) {
                 val firstImg = msg.imageUrls.first()
                 holder.ivUserImage.visibility = View.VISIBLE
                 bindRemoteImage(holder.itemView.context, firstImg, holder.ivUserImage)
+                holder.ivUserImage.setOnClickListener {
+                    onImageClickListener?.invoke(ChatImageItem(url = firstImg))
+                }
             } else {
                 holder.ivUserImage.visibility = View.GONE
+                holder.ivUserImage.setOnClickListener(null)
             }
         } else {
             holder.layoutUserMsg.visibility = View.GONE
@@ -126,8 +146,12 @@ class ChatAdapter(
             if (!firstImg.isNullOrBlank()) {
                 holder.ivBotImage.visibility = View.VISIBLE
                 bindRemoteImage(holder.itemView.context, firstImg, holder.ivBotImage)
+                holder.ivBotImage.setOnClickListener {
+                    onImageClickListener?.invoke(ChatImageItem(url = firstImg))
+                }
             } else {
                 holder.ivBotImage.visibility = View.GONE
+                holder.ivBotImage.setOnClickListener(null)
             }
         }
     }
@@ -170,9 +194,7 @@ class ChatAdapter(
     }
 
     private suspend fun loadBitmapFromDiskOrNetwork(context: Context, rawUrl: String): Bitmap? {
-        val cacheDir = File(context.cacheDir, "chat_image_cache").apply { if (!exists()) mkdirs() }
-        val filename = md5Hex(rawUrl) + ".img"
-        val diskFile = File(cacheDir, filename)
+        val diskFile = getDiskCacheFile(context, rawUrl)
 
         val targetWidth = 600
         val targetHeight = 800
