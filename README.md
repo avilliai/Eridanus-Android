@@ -53,3 +53,15 @@
 2. **鉴权 Token**：若服务端的 `basic_config.yaml` 开启了 WebUI 访问 token，在此填入对应 token；若未开启则可留空。
 3. **绑定 QQ 号**：填入你在 QQ 上与机器人对话的 QQ 账号（例如 `1840094972`），实现记忆互通。
 4. **自定义助理名**：可自定义 Bot 在界面与悬浮窗显示的昵称（默认为 `Eridanus`）。
+---
+
+## 🤖 GitHub Actions CI/CD 自动构建与发版
+项目已完整配置 GitHub Actions 自动化工作流（.github/workflows/build-and-release.yml）：
+1. **自动构建与产物上传**：每次推送到 main 或 master 分支时，云端自动使用 JDK 17 与 Android SDK 编译 Debug APK，并在 Actions 页面提供 30 天的安装包 Artifacts 下载。
+2. **打 Tag 自动发布 Release**：只需打上版本 Tag 并推送至 GitHub：
+   `ash
+   git tag v1.1.9
+   git push origin v1.1.9
+   `
+   工作流将自动捕获版本号，并在 GitHub Releases 页面自动发布新版本，直接将打包好的 Eridanus-Assistant-v1.1.9.apk 附加到 Release 附件供随时下载！
+3. **网页端一键手动触发**：支持在 GitHub 网页的 **Actions** -> **Build and Release Android APK** 中点击 **Run workflow** 手动构建或发版。
