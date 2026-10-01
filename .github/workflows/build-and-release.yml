@@ -1,0 +1,85 @@
+name: Build and Release Android APK
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Whether to create a GitHub Release (for manual triggers)'
+        required: false
+        default: 'false'
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build & Package APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Grant Execute Permission to Gradlew
+        run: chmod +x gradlew
+
+      - name: Extract Version Info
+        id: version_info
+        run: |
+          VERSION_NAME=$(grep "versionName" app/build.gradle | head -1 | awk -F '"' '{print $2}')
+          VERSION_CODE=$(grep "versionCode" app/build.gradle | head -1 | awk '{print $2}')
+          echo "VERSION_NAME=${VERSION_NAME}" >> $GITHUB_ENV
+          echo "VERSION_CODE=${VERSION_CODE}" >> $GITHUB_ENV
+          echo "Extracted App Version: ${VERSION_NAME} (code: ${VERSION_CODE})"
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Prepare Artifacts
+        id: prepare_artifacts
+        run: |
+          APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
+          TARGET_APK="app/build/outputs/apk/debug/Eridanus-Assistant-v${VERSION_NAME}.apk"
+          cp "$APK_PATH" "$TARGET_APK"
+          echo "TARGET_APK=${TARGET_APK}" >> $GITHUB_ENV
+          echo "Renamed APK to ${TARGET_APK}"
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Eridanus-Assistant-v${{ env.VERSION_NAME }}
+          path: ${{ env.TARGET_APK }}
+          retention-days: 30
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.create_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Eridanus Assistant ${{ github.ref_name || format('v{0}', env.VERSION_NAME) }}"
+          tag_name: ${{ github.ref_name || format('v{0}', env.VERSION_NAME) }}
+          files: ${{ env.TARGET_APK }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ### 📱 Eridanus 助理 Android 客户端
+            - **版本**：v${{ env.VERSION_NAME }} (Build ${{ env.VERSION_CODE }})
+            - **功能说明**：
+              - 全局屏幕悬浮球与多模态屏幕翻译/建议
+              - 实时聊天增量流同步与图片跨设备缓存
+              - 完整共享 QQ 账号上下文与长期记忆
+            - **下载说明**：下载下方附件 `Eridanus-Assistant-v${{ env.VERSION_NAME }}.apk` 并直接安装至安卓设备。
